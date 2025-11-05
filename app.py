@@ -517,6 +517,8 @@ def criar_alerta(tipo, mensagem):
 
 def copiar_feedback(texto):
     # Esta função agora só retorna o alerta, o JS faz a cópia.
+    # Esta função é chamada pelo _js, mas seu retorno (o alerta) não será usado.
+    # No entanto, é bom mantê-la para o caso de o _js ser removido novamente.
     if texto:
         return criar_alerta('success', '✅ Texto copiado!')
     return criar_alerta('warning', '⚠️ Nada para copiar')
@@ -870,9 +872,9 @@ def gerar_imagem_robusta(descricao_pt, estilo_escolhido, qualidade, filtro_escol
 # ============================================
 # FUNÇÃO DO CHATBOT
 # ============================================
-def responder_chat(message, chat_history):
+def responder_chat(chat_history):
     """
-    Função principal de lógica do chatbot. Recebe a nova mensagem e o histórico,
+    Função principal de lógica do chatbot. Recebe o histórico,
     retorna a string de resposta da IA.
     """
     if not HUGGINGFACE_API_KEY:
@@ -882,16 +884,17 @@ def responder_chat(message, chat_history):
     
     system_prompt = "Você é um assistente virtual prestativo e amigável, especializado em marketing de mídias sociais e criação de conteúdo, mas pode responder sobre qualquer tópico. Seja direto e útil."
     
-    # Constrói o payload de mensagens
-    messages = [{"role": "system", "content": system_prompt}]
-    # Adiciona o histórico existente
-    messages.extend(chat_history)
-    # Adiciona a nova mensagem do usuário
-    messages.append({"role": "user", "content": message})
+    # --- INÍCIO DA CORREÇÃO ---
+    # Limpar o histórico para a API, removendo chaves extras
+    messages_api = [{"role": "system", "content": system_prompt}]
+    for msg in chat_history:
+        # Apenas adiciona 'role' e 'content'
+        messages_api.append({"role": msg["role"], "content": msg["content"]})
+    # --- FIM DA CORREÇÃO ---
 
     payload = {
         "model": MODELO_TEXTO,
-        "messages": messages,
+        "messages": messages_api, # Usar a lista limpa
         "max_tokens": 1500,
         "temperature": 0.7,
         "stream": False
@@ -922,7 +925,7 @@ def chatbot_respond(message, chat_history):
     # 1. Adiciona a mensagem do usuário ao histórico
     chat_history.append({"role": "user", "content": message})
     # 2. Obtém a resposta do bot (string)
-    bot_response_str = responder_chat(message, chat_history)
+    bot_response_str = responder_chat(chat_history) # Modificado: não passa mais 'message'
     # 3. Adiciona a resposta do bot ao histórico
     chat_history.append({"role": "assistant", "content": bot_response_str})
     # 4. Retorna a caixa de texto vazia e o histórico atualizado
@@ -1258,8 +1261,10 @@ with gr.Blocks(theme=custom_theme, title="Gerador de Posts e Chatbot (Completo)"
                     editor_locked = gr.State(True)
                     refinar_btn = gr.Button("✏️ Refinar Post")
                     
+                    # CORREÇÃO: Removido o botão de cópia e adicionada instrução
+                    gr.Markdown("ℹ️ *Use o ícone de prancheta (📋) no canto superior direito da caixa de texto para copiar o conteúdo.*")
+                    
                     with gr.Row():
-                        copiar_btn = gr.Button("📋 Copiar Texto", variant="secondary")
                         limpar_btn = gr.Button("🧹 Limpar Tudo", variant="stop")
         
                     gr.Markdown("") # Espaçamento
@@ -1432,61 +1437,90 @@ with gr.Blocks(theme=custom_theme, title="Gerador de Posts e Chatbot (Completo)"
             with gr.Row():
                 gerar_relatorio_btn = gr.Button("Atualizar Relatório", variant="secondary")
                 resetar_analytics_btn = gr.Button("Resetar Analytics (CUIDADO)", variant="stop")
+                # Botão oculto para confirmação
+                resetar_analytics_btn_confirm = gr.Button("Confirmar Reset", visible=False, elem_id="reset_confirm_hidden_btn")
 
         with gr.TabItem("⚙️ Configurações", id=4):
-            gr.Markdown("### Configurações do Gerador")
-            gr.Markdown("**Modelo de Texto (LLM):** Llama 3.1 8B (Usado para Posts e Chatbot)")
-            gr.Markdown("**Modelos de Imagem:** FLUX.1-schnell, FLUX.1-dev, SDXL 1.0")
-            gr.Markdown("**Modelo de Tradução (PT -> EN):** Helsinki-NLP/opus-mt-pt-en")
-            gr.Markdown("**API Provider:** Hugging Face Inference")
-            gr.Markdown("**Database:** Google Firestore (via Firebase Admin)")
-            gr.Markdown("---")
-            gr.Markdown("#### Funcionalidades (Versão Completa):")
-            gr.Markdown("- **Gerador de Posts:** Cria posts completos com texto e imagem.")
-            gr.Markdown("- **Seleção de Formato:** Permite escolher o formato do texto (Instagram, Twitter, LinkedIn, WhatsApp).")
-            gr.Markdown("- **Controles Avançados:** Permite seleção de Estilo, Qualidade e Filtros para a imagem.")
-            gr.Markdown("- **Download de Post:** Baixa um .zip com .txt e .png.")
-            gr.Markdown("- **Chatbot Assistente:** Converse com a IA para ideias e perguntas rápidas.")
-            gr.Markdown("- **Histórico Persistente:** Salva os *posts gerados* no Firestore.")
-            gr.Markdown("- **Busca no Histórico:** Permite buscar e filtrar posts antigos.")
-            gr.Markdown("- **Favoritos:** Permite marcar posts como favoritos.")
-            gr.Markdown("- **Sistema de Cache:** Salva posts localmente para acelerar requisições futuras.")
-            gr.Markdown("- **Sistema de Analytics:** Rastreia o uso (total, por nicho, etc.) no Firestore.")
+            # CORREÇÃO: Removido 'background-color: white' e usado variáveis de tema
+            gr.HTML(
+                """
+                <div style='padding: 16px; background-color: var(--primary-50); border: 1px solid var(--primary-200); border-radius: 8px; color: var(--text-color-heavy);'>
+                    <h3 style='color: var(--primary-600); font-size: 1.25rem; font-weight: 600; margin-bottom: 12px;'>Configurações do Gerador</h3>
+                    <div style='background-color: var(--background-fill-primary); border: 1px solid var(--border-color-primary); border-radius: 8px; padding: 16px;'>
+                        <p style='margin-bottom: 8px;'><strong>Modelo de Texto (LLM):</strong> Llama 3.1 8B (Usado para Posts e Chatbot)</p>
+                        <p style='margin-bottom: 8px;'><strong>Modelos de Imagem:</strong> FLUX.1-schnell, FLUX.1-dev, SDXL 1.0</p>
+                        <p style='margin-bottom: 8px;'><strong>Modelo de Tradução (PT -> EN):</strong> Helsinki-NLP/opus-mt-pt-en</p>
+                        <p style='margin-bottom: 8px;'><strong>API Provider:</strong> Hugging Face Inference</p>
+                        <p style='margin-bottom: 0;'><strong>Database:</strong> Google Firestore (via Firebase Admin)</p>
+                    </div>
+                    
+                    <h4 style='color: var(--primary-600); font-size: 1.1rem; font-weight: 600; margin-top: 16px; margin-bottom: 12px;'>Funcionalidades (Versão Completa):</h4>
+                    <ul style='list-style-type: disc; margin-left: 20px; background-color: var(--background-fill-primary); border: 1px solid var(--border-color-primary); border-radius: 8px; padding: 16px 16px 16px 32px;'>
+                        <li style='margin-bottom: 6px;'><strong>Gerador de Posts:</strong> Cria posts completos com texto e imagem.</li>
+                        <li style='margin-bottom: 6px;'><strong>Seleção de Formato:</strong> Permite escolher o formato (Instagram, Twitter, LinkedIn, WhatsApp).</li>
+                        <li style='margin-bottom: 6px;'><strong>Controles Avançados:</strong> Permite seleção de Estilo, Qualidade e Filtros para a imagem.</li>
+                        <li style='margin-bottom: 6px;'><strong>Download de Post:</strong> Baixa um .zip com .txt e .png.</li>
+                        <li style'margin-bottom: 6px;'><strong>Chatbot Assistente:</strong> Converse com a IA para ideias e perguntas rápidas.</li>
+                        <li style='margin-bottom: 6px;'><strong>Histórico Persistente:</strong> Salva os posts gerados no Firestore.</li>
+                        <li style='margin-bottom: 6px;'><strong>Busca no Histórico:</strong> Permite buscar e filtrar posts antigos.</li>
+                        <li style='margin-bottom: 6px;'><strong>Favoritos:</strong> Permite marcar posts como favoritos.</li>
+                        <li style='margin-bottom: 6px;'><strong>Sistema de Cache:</strong> Salva posts localmente para acelerar requisições.</li>
+                        <li style='margin-bottom: 0;'><strong>Sistema de Analytics:</strong> Rastreia o uso (total, por nicho, etc.) no Firestore.</li>
+                    </ul>
+                </div>
+                """
+            )
 
         with gr.TabItem("ℹ️ Sobre", id=5):
-            gr.Markdown("""
-            ### Sobre Este Projeto
+            # CORREÇÃO: Removido 'background-color: white' e usado variáveis de tema
+            gr.HTML(
+                """
+                <div style='padding: 16px; background-color: var(--primary-50); border: 1px solid var(--primary-200); border-radius: 8px; color: var(--text-color-heavy);'>
+                    <h3 style='color: var(--primary-600); font-size: 1.25rem; font-weight: 600; margin-bottom: 12px;'>Sobre Este Projeto</h3>
+                    <div style='background-color: var(--background-fill-primary); border: 1px solid var(--border-color-primary); border-radius: 8px; padding: 16px;'>
+                        <p style='margin-bottom: 12px;'>Este gerador foi desenvolvido no <strong>Curso de Python com IA</strong>.</p>
+                        
+                        <h4 style='color: var(--primary-600); font-size: 1.1rem; font-weight: 600; margin-top: 12px; margin-bottom: 8px;'>Tecnologias:</h4>
+                        <ul style='list-style-type: disc; margin-left: 20px; padding-left: 16px;'>
+                            <li style='margin-bottom: 4px;'>Hugging Face Spaces (hospedagem)</li>
+                            <li style='margin-bottom: 4px;'>Gradio (interface web)</li>
+                            <li style='margin-bottom: 4px;'><strong>Llama 3.1 8B</strong> (geração de texto e chatbot)</li>
+                            <li style='margin-bottom: 4px;'><strong>FLUX.1 & SDXL</strong> (geração de imagens)</li>
+                            <li style='margin-bottom: 4px;'>Opus-MT (tradução)</li>
+                            <li style='margin-bottom: 4px;'><strong>Firebase Firestore</strong> (Banco de Dados & Analytics)</li>
+                            <li style='margin-bottom: 4px;'><strong>PIL</strong> (composição de posts)</li>
+                            <li style='margin-bottom: 4px;'>Cache local (para performance)</li>
+                            <li style='margin-bottom: 4px;'>CSV & ZIP (para exportação)</li>
+                        </ul>
 
-            Este gerador foi desenvolvido no **Curso de Python com IA**.
+                        <h4 style='color: var(--primary-600); font-size: 1.1rem; font-weight: 600; margin-top: 16px; margin-bottom: 8px;'>Como funciona:</h4>
+                        <ol style='list-style-type: decimal; margin-left: 20px; padding-left: 16px;'>
+                            <li style='margin-bottom: 4px;'><strong>Gerar Post:</strong> Você define o tema, nicho, estilo e formato.</li>
+                            <li style='margin-bottom: 4px;'><strong>Imagem (Opcional):</strong> Você ativa e seleciona Estilo, Qualidade e Filtro.</li>
+                            <li style='margin-bottom: 4px;'><strong>Refinar (Opcional):</strong> Clique em "Refinar Post" para editar o texto gerado.</li>
+                            <li style='margin-bottom: 4px;'><strong>Download:</strong> Baixe um .zip com o texto e a imagem.</li>
+                            <li style='margin-bottom: 4px;'><strong>Histórico & Analytics:</strong> Os posts são salvos no Firestore.</li>
+                            <li style='margin-bottom: 4px;'><strong>Exportar:</strong> Na aba "Histórico", exporte seus dados como CSV.</li>
+                        </ol>
 
-            **Tecnologias:**
-            - Hugging Face Spaces (hospedagem)
-            - Gradio (interface web)
-            - **Llama 3.1 8B (geração de texto e chatbot)**
-            - **FLUX.1 & SDXL (geração de imagens)**
-            - Opus-MT (tradução)
-            - **Firebase Firestore (Banco de Dados & Analytics)**
-            - **PIL (Python Imaging Library) (para composição de posts)**
-            - **Cache local (para performance)**
-            - **CSV & ZIP (para exportação)**
+                        <p style='margin-top: 16px; font-weight: 600;'><strong>Desenvolvido por:</strong> Wilder Paz</p>
+                    </div>
+                </div>
+                """
+            )
 
-            **Como funciona:**
-            1. **Gerar Post:** Você define o tema, nicho, estilo e **formato** do *texto*.
-            2. **Imagem (Opcional):** Você ativa, descreve a imagem e seleciona *Estilo*, *Qualidade* e *Filtro*.
-            3. O sistema otimiza o prompt, traduz para inglês e usa o sistema de *fallback* de modelos (baseado na *Qualidade*) para gerar a imagem.
-            4. **Refinar (Opcional):** Clique em "Refinar Post" para editar o texto gerado.
-            5. **Download:** Após a geração, você pode clicar em "Baixar Post (.zip)" para salvar um ZIP com o texto e a imagem.
-            6. **Chatbot:** Você pode conversar diretamente com a IA na aba 'Chatbot Assistente' para tirar dúvidas.
-            7. **Histórico & Analytics:** Os posts gerados são salvos no Firestore e as métricas de uso são atualizadas.
-            8. **Exportar:** Na aba "Histórico", você pode filtrar e exportar seus dados como CSV.
-
-            **Desenvolvido por:** Wilder Paz
-            """)
-
-    # Footer
-    gr.Markdown("""
-    ---
-    **Curso de Python com IA** | 🤖 Desenvolvido com Llama 3.1 & FLUX | ⚡ Hugging Face Spaces + Gradio + Firestore + Cache + Analytics
+    # MELHORIA: Rodapé atualizado para HTML
+    gr.HTML("""
+    <div>
+        <div style='padding: 12px; background-color: #eef2ff; border: 1px solid #dbeafe; border-radius: 8px; text-align: center; margin-top: 16px;'>
+            <p style='font-weight: 600; color: #3730a3; margin: 0;'>
+                Se você gosta dos nossos resultados de Geração de Posts e Chatbot, por favor, dê-nos uma ⭐ no nosso Space!
+            </p>
+        </div>
+        <p style='text-align: center; font-size: 0.9rem; color: #6b7280; margin-top: 12px;'>
+            <strong>Curso de Python com IA</strong> | 🤖 Desenvolvido com Llama 3.1 & FLUX | ⚡ Hugging Face Spaces + Gradio + Firestore + Cache + Analytics
+        </p>
+    </div>
     """)
 
     # ============================================
@@ -1516,6 +1550,8 @@ with gr.Blocks(theme=custom_theme, title="Gerador de Posts e Chatbot (Completo)"
         outputs=gerar_outputs,
         show_progress="full"
     )
+    
+    # CORREÇÃO: Removido o evento de cópia JS
     
     # Lista de outputs para o botão Limpar
     limpar_outputs = [
@@ -1620,11 +1656,34 @@ with gr.Blocks(theme=custom_theme, title="Gerador de Posts e Chatbot (Completo)"
         outputs=[analytics_display]
     )
     
+    # CORREÇÃO: Implementação do botão de reset com 2 botões (visível e oculto)
+    
+    # 1. O botão visível SÓ executa o JS.
     resetar_analytics_btn.click(
+        fn=None, # Nenhuma função Python aqui
+        inputs=None,
+        outputs=None,
+        js="""
+        () => {
+            if (confirm('Tem certeza que deseja resetar TODOS os dados de analytics e cache? Esta ação não pode ser desfeita.')) {
+                // Encontra o botão oculto pelo elem_id e clica nele
+                const hidden_btn = document.getElementById('reset_confirm_hidden_btn');
+                if (hidden_btn) {
+                    hidden_btn.click();
+                } else {
+                    console.error('Botão oculto de confirmação não encontrado');
+                }
+            }
+            // Se o usuário clicar em "Cancelar", nada acontece.
+        }
+        """
+    )
+    
+    # 2. O botão oculto (definido na UI) executa a função Python.
+    resetar_analytics_btn_confirm.click(
         fn=resetar_analytics,
         inputs=None,
-        outputs=[analytics_display],
-        js="() => { return confirm('Tem certeza que deseja resetar TODOS os dados de analytics e cache? Esta ação não pode ser desfeita.') }"
+        outputs=[analytics_display]
     )
 
 # Lançar aplicação
